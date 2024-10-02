@@ -97,7 +97,7 @@
     "jest-environment-jsdom": "^29.4.1",
     "lint-staged": "^15.2.2",
     "nx": "17.3.2",
-    "nx-ignore": "^19.2.0",
+    "nx-ignore": "^19.8.0",
     "postcss": "8.4.21",
     "prettier": "^2.6.2",
     "sass": "1.62.1",
