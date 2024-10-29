@@ -1,0 +1,56 @@
+
+trigger: 
+  branches:
+    include:
+      - master
+      - develop
+  paths:
+    include:
+      - TokenIntegrationService/infrastructure/*
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  - group: TokenIntegrationService-DEV
+
+steps:
+- task: Npm@1
+  displayName: 'Install JsonLint'
+  inputs:
+    command: 'custom'
+    customCommand: 'install jsonlint -g'
+
+- task: CmdLine@2
+  displayName: 'Echo the Agents work directory to the console'
+  inputs:
+    script: 'echo $(Agent.WorkFolder)'
+
+- bash: echo This script could use $(Agent.WorkFolder)
+
+- task: CmdLine@2
+  inputs:
+    script: 'jsonlint template.json'
+    workingDirectory: 'TokenIntegrationService/infrastructure'
+    
+- task: AzureResourceManagerTemplateDeployment@3
+  displayName: 'Token Integration Service ARM Template Validation'
+  inputs:
+    deploymentScope: 'Resource Group'
+    azureResourceManagerConnection: 'TokenIntegrationService-DEV'
+    subscriptionId: '3a9bae85-2f6e-47a1-a371-7ee3c84cf70b'
+    action: 'Create Or Update Resource Group'
+    resourceGroupName: 'mhpd-tokenintegrationservice-rg-dev'
+    location: 'UK South'
+    templateLocation: 'Linked artifact'
+    csmFile: 'TokenIntegrationService/infrastructure/template.json'
+    csmParametersFile: 'TokenIntegrationService/infrastructure/parameters.json'
+    overrideParameters: '-infrastructureResourceGroup $(infrastructureResourceGroup) -appServicePlanName $(appServicePlanName) -webAppName $(webAppName)'
+    deploymentMode: 'Validation'
+
+- task: PublishBuildArtifacts@1
+  condition: and(succeeded(), in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'))
+  inputs:
+    PathtoPublish: 'TokenIntegrationService/infrastructure'
+    ArtifactName: 'drop'
+    publishLocation: 'Container'
+

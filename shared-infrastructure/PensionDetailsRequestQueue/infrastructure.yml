@@ -1,0 +1,57 @@
+
+trigger: 
+  branches:
+    include:
+      - master
+      - develop
+
+  paths:
+    include:
+      - infrastructure/PensionDetailsRequestQueue/*.yml
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  - group: PensionDetailsRequestQueue-DEV
+
+steps:
+- task: Npm@1
+  displayName: 'Install JsonLint'
+  inputs:
+    command: 'custom'
+    customCommand: 'install jsonlint -g'
+
+- task: CmdLine@2
+  displayName: 'Echo the Agents work directory to the console'
+  inputs:
+    script: 'echo $(Agent.WorkFolder)'
+
+- bash: echo This script could use $(Agent.WorkFolder)
+
+- task: CmdLine@2
+  inputs:
+    script: 'jsonlint template.json'
+    workingDirectory: 'infrastructure/PensionDetailsRequestQueue'
+    
+- task: AzureResourceManagerTemplateDeployment@3
+  displayName: 'Pension Details Request Queue ARM Template Validation'
+  inputs:
+    deploymentScope: 'Resource Group'
+    azureResourceManagerConnection: 'MHPDCloudServices-DEV'
+    subscriptionId: '3a9bae85-2f6e-47a1-a371-7ee3c84cf70b'
+    action: 'Create Or Update Resource Group'
+    resourceGroupName: 'mhpd-cloudservices-rg-dev'
+    location: 'UK South'
+    templateLocation: 'Linked artifact'
+    csmFile: 'infrastructure/PensionDetailsRequestQueue/template.json'
+    csmParametersFile: 'infrastructure/PensionDetailsRequestQueue/parameters.json'
+    overrideParameters: '-serviceBusNamespaceName $(serviceBusNamespaceName) -serviceBusQueueName $(serviceBusQueueName)'
+    deploymentMode: 'Validation'
+
+- task: PublishBuildArtifacts@1
+  condition: and(succeeded(), in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'))
+  inputs:
+    PathtoPublish: 'infrastructure/PensionDetailsRequestQueue'
+    ArtifactName: 'drop'
+    publishLocation: 'Container'
+

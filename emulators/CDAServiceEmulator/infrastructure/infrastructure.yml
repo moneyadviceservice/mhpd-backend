@@ -1,0 +1,61 @@
+
+trigger:
+  branches:
+    include:
+      - master
+      - develop
+      - feature/*
+  paths:
+    include:
+      - emulators/CDAServiceEmulator/infrastructure/*.yml
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  - group: CDAServiceEmulator-DEV
+
+steps:
+  - task: Npm@1
+    displayName: 'Install JsonLint'
+    inputs:
+      command: 'custom'
+      customCommand: 'install jsonlint -g'
+
+  - task: CmdLine@2
+    displayName: 'Echo the Agents work directory to the console'
+    inputs:
+      script: 'echo $(Agent.WorkFolder)'
+
+  - bash: echo This script could use $(Agent.WorkFolder)
+
+  - task: CmdLine@2
+    displayName: 'Directory structure on Agent'
+    inputs:
+      script: 'tree $(Agent.WorkFolder) -a -f'
+
+  - task: CmdLine@2
+    inputs:
+      script: 'jsonlint template.json'
+      workingDirectory: 'emulators/CDAServiceEmulator/infrastructure'
+
+  - task: AzureResourceManagerTemplateDeployment@3
+    displayName: 'CDA Service Emulator ARM Template Validation'
+    inputs:
+      deploymentScope: 'Resource Group'
+      azureResourceManagerConnection: 'CDAServiceEmulator-DEV'
+      subscriptionId: '3a9bae85-2f6e-47a1-a371-7ee3c84cf70b'
+      action: 'Create Or Update Resource Group'
+      resourceGroupName: 'mhpd-cdaserviceemulator-rg-dev'
+      location: 'Uk South'
+      templateLocation: 'Linked artifact'
+      csmFile: 'emulators/CDAServiceEmulator/infrastructure/template.json'
+      csmParametersFile: 'emulators/CDAServiceEmulator/infrastructure/parameters.json'
+      overrideParameters: '-infrastructureResourceGroup $(infrastructureResourceGroup) -appServicePlanName $(appServicePlanName) -webAppName $(webAppName)'
+      deploymentMode: 'Incremental'
+
+  - task: PublishBuildArtifacts@1
+    condition: and(succeeded(), in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'))
+    inputs:
+      PathtoPublish: 'emulators/CDAServiceEmulator/infrastructure'
+      ArtifactName: 'drop'
+      publishLocation: 'Container'

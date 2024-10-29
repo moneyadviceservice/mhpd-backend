@@ -1,0 +1,86 @@
+# ASP.NET Core
+# Build and test ASP.NET Core projects targeting .NET Core.
+# Add steps that run tests, create a NuGet package, deploy, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/dotnet-core
+
+trigger:
+  branches:
+    include:
+      - master
+      - develop
+      
+  paths:
+    include:
+      - services/PeiIntegrationService/app/*
+      - services/PeiIntegrationService/tests/*
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  buildConfiguration: 'Release'
+  projectsToRestoreAndBuild: | 
+     services/PeiIntegrationService/app/**/*.csproj
+     services/PeiIntegrationService/tests/**/*.csproj
+
+steps:
+- script: echo 'Starting Pei Integration Service build pipeline'
+
+- task: UseDotNet@2
+  displayName: 'Install .NET Core 8.x'
+  inputs:
+    version: 8.x
+    
+- task: DotNetCoreCLI@2
+  displayName: 'Restore projects'
+  inputs:
+    command: 'restore'
+    feedsToUse: 'select'
+    vstsFeed: 'MaPS Digital/MHPD-Shared'
+    projects: |
+     '$(projectsToRestoreAndBuild)'
+
+- task: DotNetCoreCLI@2
+  displayName: 'Build Project'
+  inputs:
+    command: 'build'
+    projects: |
+     '$(projectsToRestoreAndBuild)'
+    arguments: '--configuration $(buildConfiguration)'
+
+- task: DotNetCoreCLI@2
+  displayName: 'Run Unit Tests - $(buildConfiguration)'
+  inputs:
+    command: 'test'
+    projects: 'services/PeiIntegrationService/tests/**/*.csproj'
+    arguments: '--configuration $(buildConfiguration) --logger trx --collect "Code coverage" --results-directory "$(Build.SourcesDirectory)/TestResults/Coverage/"'
+    publishTestResults: false
+
+- task: PublishTestResults@2
+  displayName: 'Publish Test Results'
+  inputs:
+    testResultsFormat: VSTest
+    testResultsFiles: '**/*.trx'
+    searchFolder: '$(Build.SourcesDirectory)/TestResults/Coverage/'
+
+- task: PublishCodeCoverageResults@2
+  inputs:
+    summaryFileLocation: '$(Build.SourcesDirectory)/TestResults/Coverage/'
+
+- task: DotNetCoreCLI@2
+  displayName: 'Publish and zip'
+  inputs:
+    command: 'publish'
+    publishWebProjects: false
+    projects: 'services/PeiIntegrationService/app/**/*.csproj'
+    arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)'
+    zipAfterPublish: true
+
+- task: PublishBuildArtifacts@1
+  displayName: 'Publish build artifacts'
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: 'drop'
+    publishLocation: 'Container'
+
+- script: echo 'Finish Pei Integration Service build pipeline'

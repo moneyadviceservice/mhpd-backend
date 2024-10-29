@@ -1,0 +1,83 @@
+# ASP.NET Core
+# Build and test ASP.NET Core projects targeting .NET Core.
+# Add steps that run tests, create a NuGet package, deploy, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/dotnet-core
+
+trigger:
+  branches:
+    include:
+      - master
+      - develop
+      
+  paths:
+    include:
+      - services/PensionProviderIntegrationService/app/*
+      - services/PensionProviderIntegrationService/tests/*
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  buildConfiguration: 'Release'
+  projectsToRestore: | 
+     services/PensionProviderIntegrationService/app/**/*.csproj
+     services/PensionProviderIntegrationService/tests/PensionRequestFunctionUnitTests/*.csproj
+
+steps:
+- script: echo 'Starting Pension Request Queue Function build pipeline'
+
+- task: UseDotNet@2
+  displayName: 'Install .NET Core 8.x'
+  inputs:
+    version: 8.x
+    
+- task: NuGetCommand@2
+  inputs:
+    command: 'restore'
+    restoreSolution: 'services/PensionProviderIntegrationService/app/PensionRequestFunction.sln'
+    feedsToUse: 'select'
+    vstsFeed: 'a01e6333-8c36-4e86-a01b-2170a9eb58cd/1688c2e8-3613-4218-b544-3301fa44f82e'
+
+- task: DotNetCoreCLI@2
+  displayName: 'Build Project'
+  inputs:
+    command: 'build'
+    projects: 'services/PensionProviderIntegrationService/app/**/*.csproj'
+    arguments: '--configuration $(buildConfiguration)'
+
+- task: DotNetCoreCLI@2
+  displayName: 'Run Unit Tests - $(buildConfiguration)'
+  inputs:
+    command: 'test'
+    projects: 'services/PensionProviderIntegrationService/tests/PensionRequestFunctionUnitTests/*.csproj'
+    arguments: '--configuration $(buildConfiguration) --logger trx --collect "Code coverage" --results-directory "$(Build.SourcesDirectory)/TestResults/Coverage/"'
+    publishTestResults: false
+
+- task: PublishTestResults@2
+  displayName: 'Publish Test Results'
+  inputs:
+    testResultsFormat: VSTest
+    testResultsFiles: '**/*.trx'
+    searchFolder: '$(Build.SourcesDirectory)/TestResults/Coverage/'
+
+- task: PublishCodeCoverageResults@2
+  inputs:
+    summaryFileLocation: '$(Build.SourcesDirectory)/TestResults/Coverage/'
+
+- task: DotNetCoreCLI@2
+  displayName: 'Publish and zip'
+  inputs:
+    command: 'publish'
+    publishWebProjects: false
+    projects: 'services/PensionProviderIntegrationService/app/**/*.csproj'
+    arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)'
+    zipAfterPublish: true
+
+- task: PublishBuildArtifacts@1
+  displayName: 'Publish build artifacts'
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: 'drop'
+    publishLocation: 'Container'
+
+- script: echo 'Finish Pension Request Queue Function build pipeline'

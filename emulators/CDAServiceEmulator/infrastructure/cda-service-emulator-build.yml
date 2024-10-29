@@ -1,0 +1,89 @@
+# ASP.NET Core
+# Build and test ASP.NET Core projects targeting .NET Core.
+# Add steps that run tests, create a NuGet package, deploy, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/dotnet-core
+
+trigger:
+  branches:
+    include:
+      - master
+      - develop
+  paths:
+    include:
+      - emulators/CDAServiceEmulator/app/*
+      - emulators/CDAServiceEmulator/tests/*
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  buildConfiguration: 'Release'
+  projectsToRestore: |
+     emulators/CDAServiceEmulator/app/**/*.csproj
+     emulators/CDAServiceEmulator/tests/**/*.csproj
+
+steps:
+
+- task: UseDotNet@2
+  displayName: 'Install .NET Core 8.x'
+  inputs:
+    version: 8.x
+    
+- task: NuGetCommand@2
+  inputs:
+    command: 'restore'
+    restoreSolution: 'emulators/CDAServiceEmulator/app/CDAServiceEmulator/CDAServiceEmulator.sln'
+    feedsToUse: 'select'
+    vstsFeed: 'MaPS Digital/MHPD-Shared'
+
+- task: DotNetCoreCLI@2
+  displayName: 'Build Project'
+  inputs:
+    command: 'build'
+    projects: 'emulators/CDAServiceEmulator/app/**/*.csproj'
+    arguments: '--configuration $(buildConfiguration)'
+
+- task: DotNetCoreCLI@2
+  displayName: 'Run Unit Tests - $(buildConfiguration)'
+  inputs:
+    command: 'test'
+    projects: 'emulators/CDAServiceEmulator/tests/**/*.csproj'
+    arguments: '--configuration $(buildConfiguration) --logger trx --collect "Code coverage" --results-directory "$(Build.SourcesDirectory)/TestResults/Coverage/"'
+    publishTestResults: false
+
+- task: PublishTestResults@2
+  displayName: 'Publish Test Results'
+  inputs:
+    testResultsFormat: VSTest
+    testResultsFiles: '**/*.trx'
+    searchFolder: '$(Build.SourcesDirectory)/TestResults/Coverage/'
+
+- task: PublishCodeCoverageResults@2
+  inputs:
+    summaryFileLocation: '$(Build.SourcesDirectory)/TestResults/Coverage/'
+
+- task: DotNetCoreCLI@2
+  displayName: 'Publish and zip'
+  inputs:
+    command: 'publish'
+    publishWebProjects: false
+    projects: 'emulators/CDAServiceEmulator/app/**/*.csproj'
+    arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)'
+    zipAfterPublish: true
+  env:
+    JwtSettings__PrivateKey: $(jwtPrivateKey)
+    JwtSettings__ExpiryInSeconds: $(jwtExpiryInSeconds)
+    MhpdCosmosConfiguration__DatabaseName": $(DatabaseName)
+    MhpdCosmosConfiguration__CdaPeisEmulatorScenarioModelContainerName: $(CdaPeisEmulatorScenarioModelContainerName)
+    MhpdCosmosConfiguration__CdaPeisEmulatorTestInstanceDataContainerName: $(CdaPeisEmulatorTestInstanceDataContainerName)
+    MhpdCosmosConfiguration__TokenEmulatorPiesIdScenarioModelsContainerName: $(TokenEmulatorPiesIdScenarioModelsContainerName)
+    CosmosDBConnectionString: $(CosmosDBConnectionString)
+
+- task: PublishBuildArtifacts@1
+  displayName: 'Publish build artifacts'
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: 'drop'
+    publishLocation: 'Container'
+
+- script: echo 'Finish CDA Service Emulator build pipeline'

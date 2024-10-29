@@ -1,0 +1,76 @@
+# ASP.NET Core
+# Build and test ASP.NET Core projects targeting .NET Core.
+# Add steps that run tests, create a NuGet package, deploy, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/dotnet-core
+
+trigger:
+  branches:
+    include:
+      - master
+      - develop
+      
+  paths:
+    include:
+      - services/CommonServices/*
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  buildConfiguration: 'Release'
+  major: '1'
+  minor: '2'
+  revision: $[counter(variables['minor'], 0)]
+  nugetVersion: '$(major).$(minor).$(revision)'
+  projectsToRestore: | 
+     services/CommonServices/MhpdCommon/**/*.csproj
+
+steps:
+- script: echo 'Starting Common Services build pipeline'
+
+- task: UseDotNet@2
+  displayName: 'Install .NET Core 8.x'
+  inputs:
+    version: 8.x
+    
+- task: DotNetCoreCLI@2
+  displayName: 'Restore projects'
+  inputs:
+    command: 'restore'
+    feedsToUse: 'select'
+    projects: | 
+     $(projectsToRestore)
+
+- task: DotNetCoreCLI@2
+  displayName: 'Build Project'
+  inputs:
+    command: 'build'
+    projects: $(projectsToRestore)
+    arguments: '--configuration $(buildConfiguration)'
+
+- script: |
+    sed -i 's/\$nugetVersion\$/$(nugetVersion)/g' services/CommonServices/MhpdCommon/MhpdCommon.nuspec
+
+  displayName: 'Update the .nuspec version'
+  
+- task: NuGetCommand@2
+  displayName: 'Pack NuGet packages'
+  inputs:
+    command: pack
+    packagesToPack: 'services/CommonServices/MhpdCommon/**/*.nuspec'
+    packDestination: '$(Build.ArtifactStagingDirectory)'
+    versionEnvVar: 'nugetVersion'
+    versioningScheme: 'byEnvVar'
+
+- task: NuGetCommand@2
+  displayName: 'Push NuGet packages'
+  inputs:
+    command: push
+    packagesToPush: '$(Build.ArtifactStagingDirectory)/*.nupkg'
+    nuGetFeedType: 'internal'
+    feedsToUse: 'select'
+    vtsFeed: 'MaPS Digital/MHPD-Shared'
+    publishVstsFeed: 'MaPS Digital/MHPD-Shared'
+    allowPackageConflicts: true
+
+- script: echo 'Finish Common Services build pipeline'

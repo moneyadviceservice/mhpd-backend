@@ -1,0 +1,80 @@
+trigger:
+  branches:
+    include:
+      - develop
+      - feature/*
+
+pool:
+  vmImage: windows-latest
+
+variables:
+  buildConfiguration: 'Release'
+  projectsToRestoreAndBuild: |
+     **/app/**/*.csproj
+  projectsToTest: |
+     **/tests/**/*.csproj
+
+steps:
+- script: echo 'Starting MHPD backend services pipeline'
+
+- task: UseDotNet@2
+  displayName: 'Install .NET Core 8.x'
+  inputs:
+    version: 8.x
+
+- task: DotNetCoreCLI@2
+  displayName: 'Restore projects'
+  inputs:
+    command: 'restore'
+    feedsToUse: 'select'
+    vstsFeed: 'a01e6333-8c36-4e86-a01b-2170a9eb58cd/1688c2e8-3613-4218-b544-3301fa44f82e'
+    projects: | 
+     $(projectsToRestoreAndBuild)
+
+- task: SonarCloudPrepare@2.3.2
+  displayName: 'Prepare analysis configuration'
+  inputs:
+    SonarCloud: 'MAPS-SonarCloud'
+    organization: 'maps'
+    scannerMode: 'MSBuild'
+    projectKey: 'moneyandpensionsservice_MHPD.CloudServices'
+    projectName: 'MHPD.CloudServices'
+    extraProperties: sonar.exclusions=**/Program.cs
+
+- task: DotNetCoreCLI@2
+  displayName: 'Build Project'
+  inputs:
+    command: 'build'
+    projects: | 
+     $(projectsToRestoreAndBuild)
+    arguments: '--configuration $(buildConfiguration)'
+
+- task: DotNetCoreCLI@2
+  displayName: 'Run Unit Tests - $(buildConfiguration)'
+  inputs:
+    command: 'test'
+    projects: | 
+     $(projectsToTest)
+    arguments: '--configuration $(buildConfiguration) --logger trx --collect "Code coverage"'
+    publishTestResults: false
+
+- task: PublishTestResults@2
+  displayName: 'Publish Test Results'
+  inputs:
+    testResultsFormat: VSTest
+    testResultsFiles: '**/*.trx'
+    searchFolder: '$(Build.SourcesDirectory)/TestResults/Coverage/'
+
+- task: PublishCodeCoverageResults@2
+  inputs:
+    summaryFileLocation: '$(Build.SourcesDirectory)/TestResults/Coverage/'
+
+- task: SonarCloudAnalyze@2
+  displayName: 'Run SonarCloud analysis'
+
+- task: SonarCloudPublish@2
+  displayName: 'Publish results on build summary'
+  inputs:
+    pollingTimeoutSec: '300'
+
+- script: echo 'Finish MHPD backend services pipeline'

@@ -1,0 +1,111 @@
+
+trigger: 
+  branches:
+    include:
+      - master
+      - develop
+
+  paths:
+    include:
+      - shared-infrastructure/CosmosDb/*.yml
+      - shared-infrastructure/DatabaseSeedApp/*
+pool:
+  vmImage: 'windows-latest'
+
+variables:
+  - name: buildConfiguration
+    value: Release
+  - group: PensionRecordCosmosDb-DEV
+
+steps:
+- task: UseDotNet@2
+  displayName: 'Install .NET Core 8.x'
+  inputs:
+    version: 8.x
+
+- task: DotNetCoreCLI@2
+  displayName: 'Restore Project'
+  inputs:
+    command: 'restore'
+    projects: 'shared-infrastructure/DatabaseSeedApp/**/*.csproj'
+    feedsToUse: 'select'
+    vstsFeed: 'MaPS Digital/MHPD-Shared'
+
+- task: DotNetCoreCLI@2
+  displayName: 'Build Project'
+  inputs:
+    command: 'build'
+    projects: 'shared-infrastructure/DatabaseSeedApp/**/*.csproj'
+    arguments: '--configuration $(buildConfiguration)'
+    
+- task: Npm@1
+  displayName: 'Install JsonLint'
+  inputs:
+    command: 'custom'
+    customCommand: 'install jsonlint -g'
+
+- task: CmdLine@2
+  displayName: 'Echo the Agents work directory to the console'
+  inputs:
+    script: 'echo $(Agent.WorkFolder)'
+
+- bash: echo This script could use $(Agent.WorkFolder)
+
+- task: CmdLine@2
+  inputs:
+    script: 'jsonlint template.json mhpd-template.json'
+    workingDirectory: 'shared-infrastructure/CosmosDb'
+    
+- task: AzureResourceManagerTemplateDeployment@3
+  displayName: 'MHPD Test Harness Deployment'
+  inputs:
+    deploymentScope: 'Resource Group'
+    azureResourceManagerConnection: 'MHPDCloudServices-DEV'
+    subscriptionId: '3a9bae85-2f6e-47a1-a371-7ee3c84cf70b'
+    action: 'Create Or Update Resource Group'
+    resourceGroupName: 'mhpd-cloudservices-rg-dev'
+    location: 'UK South'
+    templateLocation: 'Linked artifact'
+    csmFile: 'shared-infrastructure/CosmosDb/template.json'
+    csmParametersFile: 'shared-infrastructure/CosmosDb/parameters.json'
+    overrideParameters: '-cosmosDbAccountName $(cosmosDbAccountName) -databaseName $(databaseName)'
+    deploymentMode: 'Validation'
+
+- task: AzureResourceManagerTemplateDeployment@3
+  displayName: 'MHPD Business Layer Deployment'
+  inputs:
+    deploymentScope: 'Resource Group'
+    azureResourceManagerConnection: 'MHPDCloudServices-DEV'
+    subscriptionId: '3a9bae85-2f6e-47a1-a371-7ee3c84cf70b'
+    action: 'Create Or Update Resource Group'
+    resourceGroupName: 'mhpd-cloudservices-rg-dev'
+    location: 'UK South'
+    templateLocation: 'Linked artifact'
+    csmFile: 'shared-infrastructure/CosmosDb/mhpd-template.json'
+    csmParametersFile: 'shared-infrastructure/CosmosDb/mhpd-parameters.json'
+    overrideParameters: '-cosmosDbAccountName mhpd-dev -databaseName mhpd-businesslayer'
+    deploymentMode: 'Incremental'
+    
+- task: DotNetCoreCLI@2
+  displayName: 'Publish executable'
+  inputs:
+    command: 'publish'
+    publishWebProjects: false
+    projects: 'shared-infrastructure/DatabaseSeedApp/**/*.csproj'
+    arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)'
+    zipAfterPublish: false
+
+- task: PublishBuildArtifacts@1
+  displayName: 'Publish CLI'
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: 'drop'
+    publishLocation: 'Container'
+    
+- task: PublishBuildArtifacts@1
+  condition: and(succeeded(), in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'))
+  displayName: 'Publish ARM templates'
+  inputs:
+    PathtoPublish: 'shared-infrastructure/CosmosDb'
+    ArtifactName: 'drop'
+    publishLocation: 'Container'
